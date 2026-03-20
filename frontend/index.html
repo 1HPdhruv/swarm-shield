@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Predictive Swarm Shield</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e1a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+button{font-family:inherit;cursor:pointer}
+button:hover{opacity:.85}
+button:disabled{opacity:.4;cursor:not-allowed}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#111827}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const API = "https://swarm-shield-api.onrender.com";
+
+const C = {
+  bg:"#0a0e1a",surface:"#111827",card:"#1a2236",border:"#1e2d45",
+  text:"#e2e8f0",muted:"#64748b",
+  green:"#10b981",greenBg:"#052e1f",
+  yellow:"#f59e0b",yellowBg:"#2d1f04",
+  red:"#ef4444",redBg:"#2d0a0a",
+  blue:"#3b82f6",blueBg:"#0c1a3a",
+  purple:"#a855f7",purpleBg:"#1e0a3a",
+  teal:"#14b8a6",
+};
+
+const SEV_C  = {clear:C.green,mild:C.yellow,moderate:C.yellow,severe:C.red};
+const SEV_BG = {clear:C.greenBg,mild:C.yellowBg,moderate:C.yellowBg,severe:C.redBg};
+const ST_C   = {paid:C.green,flagged:C.yellow,held:C.red,"pre-paid":C.blue};
+const TIER_C = {basic:C.teal,standard:C.blue,premium:C.purple};
+const DIS_E  = {storm:"⛈",flood:"🌊",aqi:"🌫",bandh:"🚫",forecast:"🔮",voting:"🗳"};
+
+const fmtInr = n=>`₹${Number(n).toLocaleString("en-IN")}`;
+
+function Badge({label,color,bg,small}){
+  return <span style={{display:"inline-block",padding:small?"2px 7px":"3px 10px",borderRadius:20,fontSize:small?10:11,fontWeight:600,background:bg||"#1e2d45",color:color||C.text,textTransform:"uppercase",letterSpacing:".04em"}}>{label}</span>;
+}
+
+function SwarmBar({ratio,triggered,borderline}){
+  const pct=Math.min((ratio||0)*100,100);
+  const bc=triggered?C.red:borderline?C.yellow:C.green;
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted,marginBottom:4}}>
+        <span>offline ratio</span>
+        <span style={{color:bc,fontWeight:600}}>{Math.round(pct)}%</span>
+      </div>
+      <div style={{height:8,background:"#1e2d45",borderRadius:4,overflow:"hidden"}}>
+        <div style={{height:"100%",width:`${pct}%`,background:bc,borderRadius:4,transition:"width .6s,background .3s"}}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+        <span style={{fontSize:10,color:C.muted}}>threshold 65%</span>
+        <span style={{fontSize:10,color:bc,fontWeight:600,display:"flex",alignItems:"center",gap:4}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:bc,display:"inline-block"}}/>
+          {triggered?"TRIGGERED ⚡":borderline?"BORDERLINE ⚠":"SAFE ✓"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function WorkerDots({workers}){
+  if(!workers||!workers.length)return null;
+  return(
+    <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:8}}>
+      {workers.slice(0,90).map(w=>(
+        <div key={w.id} title={`${w.id} · ${w.tier} · ${fmtInr(w.weekly_earnings)}/wk`}
+          style={{width:9,height:9,borderRadius:"50%",background:w.online?"#10b981":"#374151",transition:"background .5s"}}/>
+      ))}
+    </div>
+  );
+}
+
+function btn(color,bg,sm){
+  return{padding:sm?"5px 11px":"7px 13px",borderRadius:6,border:`1px solid ${color}66`,background:bg,color,fontSize:sm?11:12,fontWeight:600,whiteSpace:"nowrap",transition:"opacity .15s"};
+}
+
+function CityCard({id,data,workers,onSim,onReset,onVote,onForecast,loading}){
+  const sw=data?.swarm||{},wth=data?.weather||{},dis=data?.disruption||{},vot=data?.votes||{};
+  const sev=wth.severity||"clear";
+  const border=dis.active?`1px solid ${C.red}66`:sw.triggered?`1px solid ${C.red}44`:sw.borderline?`1px solid ${C.yellow}44`:`1px solid ${C.border}`;
+  return(
+    <div style={{background:C.card,borderRadius:12,border,padding:18,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div>
+          <div style={{fontSize:17,fontWeight:700}}>{data?.name}</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:2}}>{sw.total||0} workers registered</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+          <Badge label={sev} color={SEV_C[sev]} bg={SEV_BG[sev]}/>
+          {dis.active&&<Badge label={`${DIS_E[dis.type]||""} ${dis.type}`} color={C.red} bg={C.redBg}/>}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:14,fontSize:12,color:C.muted}}>
+        <span>AQI <b style={{color:wth.aqi>200?C.red:wth.aqi>100?C.yellow:C.green}}>{wth.aqi}</b></span>
+        <span>Rain <b style={{color:C.text}}>{Math.round((wth.rain_prob||0)*100)}%</b></span>
+        <span>Temp <b style={{color:C.text}}>{wth.temp}°C</b></span>
+        <span>Wind <b style={{color:C.text}}>{wth.wind_kmh} km/h</b></span>
+      </div>
+      <SwarmBar ratio={sw.ratio||0} triggered={sw.triggered} borderline={sw.borderline}/>
+      <WorkerDots workers={workers}/>
+      {vot.active&&(
+        <div style={{padding:"10px 14px",borderRadius:8,background:C.purpleBg,border:`1px solid ${C.purple}44`}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.purple,marginBottom:6}}>🗳 Layer 3 — Mutual Voting Active</div>
+          <div style={{fontSize:11,color:C.muted,marginBottom:8}}>Quorum needed: {vot.count} / {vot.required} workers voted</div>
+          <div style={{height:6,background:"#2d1a45",borderRadius:3,overflow:"hidden",marginBottom:10}}>
+            <div style={{height:"100%",width:`${Math.min(((vot.count||0)/(vot.required||12))*100,100)}%`,background:C.purple,transition:"width .4s"}}/>
+          </div>
+          <button disabled={loading} onClick={()=>onVote(id)} style={btn(C.purple,C.purpleBg,true)}>Simulate Votes ↗</button>
+        </div>
+      )}
+      {sw.triggered&&!dis.active&&(
+        <div style={{padding:"8px 12px",borderRadius:8,background:C.redBg,border:`1px solid ${C.red}44`,fontSize:11,color:C.red,fontWeight:600}}>
+          ⚡ Swarm Layer 2 triggered — payout queued
+        </div>
+      )}
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        <button disabled={loading} onClick={()=>onSim(id,"storm")}    style={btn(C.blue,C.blueBg)}>⛈ Storm</button>
+        <button disabled={loading} onClick={()=>onSim(id,"flood")}    style={btn(C.blue,C.blueBg)}>🌊 Flood</button>
+        <button disabled={loading} onClick={()=>onSim(id,"aqi")}      style={btn(C.yellow,C.yellowBg)}>🌫 AQI</button>
+        <button disabled={loading} onClick={()=>onSim(id,"bandh")}    style={btn(C.yellow,C.yellowBg)}>🚫 Bandh</button>
+        <button disabled={loading} onClick={()=>onForecast(id)}        style={btn(C.purple,C.purpleBg)}>🔮 Forecast</button>
+        <button disabled={loading} onClick={()=>onReset(id)}           style={btn(C.muted,"#1e2d45")}>↺ Reset</button>
+      </div>
+    </div>
+  );
+}
+
+function PayoutRow({p}){
+  const sc=ST_C[p.status]||C.muted;
+  const tc=TIER_C[p.tier]||C.muted;
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 14px",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <span style={{color:C.muted,fontFamily:"monospace",fontSize:10}}>{p.id}</span>
+        <span style={{color:C.muted}}>{p.city}</span>
+        <Badge label={p.tier} color={tc} bg={tc+"22"} small/>
+        <span style={{color:C.muted,fontSize:10}}>{DIS_E[p.severity]||""} {p.severity}</span>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontWeight:700,color:sc}}>{fmtInr(p.amount)}</span>
+        <Badge label={p.status} color={sc} bg={sc+"22"} small/>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [dash,setDash]=React.useState(null);
+  const [cw,setCW]=React.useState({});
+  const [loading,setLoading]=React.useState(false);
+  const [toast,setToast]=React.useState(null);
+  const [err,setErr]=React.useState(null);
+
+  const fetchDash=React.useCallback(async()=>{
+    try{
+      const r=await fetch(`${API}/api/dashboard`);
+      if(!r.ok)throw new Error("bad response");
+      setDash(await r.json());
+      setErr(null);
+    }catch{setErr("Cannot reach API — check backend is live at "+API);}
+  },[]);
+
+  const fetchWorkers=React.useCallback(async(city)=>{
+    try{const r=await fetch(`${API}/api/workers/${city}`);const d=await r.json();setCW(p=>({...p,[city]:d.workers}));}catch{}
+  },[]);
+
+  React.useEffect(()=>{
+    fetchDash();
+    const id=setInterval(fetchDash,4000);
+    return()=>clearInterval(id);
+  },[fetchDash]);
+
+  React.useEffect(()=>{
+    if(!dash)return;
+    Object.keys(dash.cities||{}).forEach(fetchWorkers);
+  },[dash]);
+
+  const simulate=async(city,type)=>{
+    setLoading(true);
+    try{const r=await fetch(`${API}/api/simulate/${city}/${type}`,{method:"POST"});const d=await r.json();setToast(`⚡ ${type.toUpperCase()} → ${d.city} | Layer: ${d.layer_fired} | Payout: ${d.payout_fired?"FIRED":"pending"}`);await fetchDash();await fetchWorkers(city);}
+    finally{setLoading(false);}
+  };
+  const reset=async(city)=>{
+    setLoading(true);
+    try{await fetch(`${API}/api/reset/${city}`,{method:"POST"});setToast(`✓ ${city} reset — all workers online`);await fetchDash();await fetchWorkers(city);}
+    finally{setLoading(false);}
+  };
+  const vote=async(city)=>{
+    setLoading(true);
+    try{const r=await fetch(`${API}/api/vote/${city}`,{method:"POST"});const d=await r.json();setToast(`🗳 ${d.votes}/${d.required} votes | Quorum: ${d.quorum_reached?"REACHED ✓":"pending"}`);await fetchDash();}
+    finally{setLoading(false);}
+  };
+  const forecast=async(city)=>{
+    setLoading(true);
+    try{const r=await fetch(`${API}/api/forecast-prepay/${city}`,{method:"POST"});const d=await r.json();setToast(`🔮 Pre-paid ${d.workers_prepaid} workers · ${fmtInr(d.total_disbursed)} · Confidence ${Math.round(d.confidence*100)}%`);await fetchDash();}
+    finally{setLoading(false);}
+  };
+
+  const stats=dash?.stats||{};
+  const payouts=dash?.recent_payouts||[];
+  const cities=dash?.cities||{};
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bg}}>
+      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 20px"}}>
+        <div style={{maxWidth:1200,margin:"0 auto",height:58,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:34,height:34,borderRadius:8,background:C.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>⚡</div>
+            <div>
+              <div style={{fontWeight:700,fontSize:15}}>Predictive Swarm Shield</div>
+              <div style={{fontSize:10,color:C.muted}}>AI Parametric Insurance · Gig Economy India</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
+            {[
+              {label:"Workers",val:(stats.total_workers||0).toLocaleString(),c:C.blue},
+              {label:"Disruptions",val:stats.active_disruptions||0,c:stats.active_disruptions?C.red:C.green},
+              {label:"Payouts",val:stats.total_payouts||0,c:C.purple},
+              {label:"Disbursed",val:fmtInr(stats.total_paid_inr||0),c:C.green},
+            ].map(s=>(
+              <div key={s.label} style={{textAlign:"center"}}>
+                <div style={{fontSize:20,fontWeight:700,color:s.c,lineHeight:1}}>{s.val}</div>
+                <div style={{fontSize:10,color:C.muted,marginTop:3}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"20px 16px"}}>
+        {err&&<div style={{marginBottom:14,padding:"10px 16px",borderRadius:8,background:C.redBg,border:`1px solid ${C.red}44`,color:C.red,fontSize:13}}>⚠ {err}</div>}
+        {toast&&(
+          <div style={{marginBottom:14,padding:"10px 16px",borderRadius:8,background:C.blueBg,border:`1px solid ${C.blue}44`,color:C.blue,fontSize:12,display:"flex",justifyContent:"space-between"}}>
+            <span>{toast}</span>
+            <button onClick={()=>setToast(null)} style={{background:"none",border:"none",color:C.blue,fontSize:14,cursor:"pointer"}}>✕</button>
+          </div>
+        )}
+        <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+          {[
+            {label:"🔮 Layer 1: Forecast",c:C.purple,desc:"48-hr pre-payout"},
+            {label:"⚡ Layer 2: Swarm",c:C.red,desc:"65% offline → auto-fire"},
+            {label:"🗳 Layer 3: Voting",c:C.yellow,desc:"12 votes → consensus"},
+          ].map(l=>(
+            <div key={l.label} style={{padding:"6px 12px",borderRadius:8,background:C.card,border:`1px solid ${l.c}44`,display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{fontSize:12,fontWeight:600,color:l.c}}>{l.label}</span>
+              <span style={{fontSize:11,color:C.muted}}>{l.desc}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(480px,1fr))",gap:14,marginBottom:20}}>
+          {Object.entries(cities).map(([id,data])=>(
+            <CityCard key={id} id={id} data={data} workers={cw[id]||[]}
+              onSim={simulate} onReset={reset} onVote={vote} onForecast={forecast} loading={loading}/>
+          ))}
+        </div>
+        {payouts.length>0&&(
+          <div style={{background:C.card,borderRadius:12,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+            <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:600,fontSize:14}}>Live Payout Feed</span>
+              <div style={{display:"flex",gap:12,fontSize:11,color:C.muted}}>
+                <span><span style={{color:C.green}}>●</span> paid</span>
+                <span><span style={{color:C.yellow}}>●</span> flagged</span>
+                <span><span style={{color:C.red}}>●</span> held</span>
+                <span><span style={{color:C.blue}}>●</span> pre-paid</span>
+              </div>
+            </div>
+            <div style={{maxHeight:320,overflow:"auto"}}>
+              {payouts.map(p=><PayoutRow key={p.id+p.timestamp} p={p}/>)}
+            </div>
+          </div>
+        )}
+        {!dash&&!err&&(
+          <div style={{textAlign:"center",padding:"80px 0",color:C.muted}}>
+            <div style={{fontSize:36,marginBottom:12}}>⚡</div>
+            <div style={{fontSize:14}}>Connecting to Swarm Shield API...</div>
+          </div>
+        )}
+        <div style={{marginTop:20,textAlign:"center",fontSize:10,color:C.muted}}>
+          API: {API} · auto-refresh every 4s
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
